@@ -34,6 +34,16 @@ button:disabled{opacity:.5}
 .legend-item{display:flex;align-items:center;gap:6px;padding:6px;border-radius:10px;background:#fff}
 .legend-item img{width:42px;height:42px;object-fit:contain}
 .legend-item small{font-size:12px;line-height:1.25}
+
+#results{display:none;margin:14px 0 8px;background:rgba(255,248,220,.97);border:4px solid #8a542c;border-radius:20px;padding:12px;box-shadow:0 5px 0 #5a321d}
+#results.show{display:block}
+#results h2{margin:0 0 10px;text-align:center;font-size:clamp(20px,4vw,30px);color:#6b351c}
+.result-list{display:flex;flex-direction:column;gap:5px}
+.result-row{display:flex;align-items:center;justify-content:center;gap:10px;background:#fff;border-radius:12px;padding:5px 8px;min-height:58px}
+.result-row img{width:52px;height:52px;object-fit:contain;flex:0 0 52px}
+.result-equation{font-size:clamp(17px,3.5vw,25px);font-weight:900;letter-spacing:.03em;color:#4b2918}
+.result-total{margin-top:10px;padding:10px;text-align:center;border-radius:12px;background:#ffe17b;border:3px solid #a66a2e;font-size:clamp(20px,4vw,30px);font-weight:900;color:#5a2e18}
+
 @media(max-width:600px){.wrap{padding:5px}header{gap:4px}.panel{padding:5px 4px;border-width:3px;border-radius:12px}.rules{font-size:10px}#board{gap:6px;padding:7px;border-width:3px;border-radius:16px}.hole{min-height:68px}.legend-grid{grid-template-columns:repeat(2,1fr)}.legend-item img{width:36px;height:36px}}
 </style>
 </head>
@@ -47,6 +57,13 @@ button:disabled{opacity:.5}
 
 <div id="board" aria-label="12個の穴"></div>
 <div id="message">スタートを押してゲーム開始！</div>
+
+<div id="results" aria-live="polite">
+  <h2>🏆 成績表</h2>
+  <div class="result-list" id="resultList"></div>
+  <div class="result-total">合計得点：<span id="totalResult">0</span>点</div>
+</div>
+
 <div class="controls">
   <button id="start">🎮 スタート</button>
   <button id="reset">🔄 リセット</button>
@@ -62,16 +79,19 @@ const IMAGES = {"dolphin": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAUMAAA
 const chars = [
  {id:"shiba",name:"柴犬服",good:true,interval:1000},
  {id:"penguin",name:"ペンギン",good:true,interval:1000},
- {id:"woman",name:"元々の女性",good:false,interval:1000},
  {id:"dolphin",name:"イルカ服",good:true,interval:800},
- {id:"yoshi",name:"緑ヨッシー服",good:true,interval:800},
  {id:"lion",name:"ライオン服",good:true,interval:800},
+ {id:"yoshi",name:"緑ヨッシー服",good:true,interval:800},
  {id:"hedgehog",name:"紫ハリネズミ服",good:true,interval:600},
+ {id:"tofu",name:"豆腐を持つ女性",good:false,interval:600},
  {id:"doraemon",name:"緑ドラえもん風",good:false,interval:600},
- {id:"tofu",name:"豆腐を持つ女性",good:false,interval:600}
+ {id:"woman",name:"元々の女性",good:false,interval:1000}
 ];
 const board=document.getElementById("board"), scoreEl=document.getElementById("score"), timeEl=document.getElementById("time"), msg=document.getElementById("message");
+const results=document.getElementById("results"), resultList=document.getElementById("resultList"), totalResult=document.getElementById("totalResult");
 let score=0,time=60,running=false,gameTimer=null,spawnTimers=[],active=Array(12).fill(null),roundToken=0;
+let hitCounts = {};
+const resultOrder = ["shiba","penguin","dolphin","lion","yoshi","hedgehog","tofu","doraemon","woman"];
 
 for(let i=0;i<12;i++){
  const hole=document.createElement("button"); hole.className="hole"; hole.dataset.index=i;
@@ -98,17 +118,37 @@ function hit(i){
  if(!running||!active[i])return;
  const id=active[i], c=chars.find(x=>x.id===id);
  setScore(score+(c.good?1:-1));
+ hitCounts[id] = (hitCounts[id] || 0) + 1;
  const holder=board.children[i].querySelector(".char");
  if(holder){holder.classList.add("hit");setTimeout(()=>clearHole(i),180)}else clearHole(i);
  msg.textContent=c.good?`✨ ${c.name}！ +1点`:`💥 ${c.name}！ −1点`;
 }
 function stop(){
- running=false;clearInterval(gameTimer);gameTimer=null;spawnTimers.forEach(clearInterval);spawnTimers=[];
+ running=false;
+ clearInterval(gameTimer);gameTimer=null;
+ spawnTimers.forEach(clearInterval);spawnTimers=[];
+ spawnTimers=[];
  active.forEach((v,i)=>clearHole(i));
  document.getElementById("start").disabled=false;
 }
+
+function showResults(){
+  resultList.innerHTML = resultOrder.map(id=>{
+    const c = chars.find(x=>x.id===id);
+    const count = hitCounts[id] || 0;
+    const unit = c.good ? 1 : -1;
+    const points = count * unit;
+    return `<div class="result-row">
+      <img src="${IMAGES[id]}" alt="">
+      <div class="result-equation">${count}回 × ${unit}点 ＝ ${points}点</div>
+    </div>`;
+  }).join("");
+  totalResult.textContent = score;
+  results.classList.add("show");
+}
+
 function start(){
- stop();score=0;time=60;setScore(0);timeEl.textContent=time;running=true;roundToken++;
+ stop();score=0;time=60;hitCounts={};setScore(0);timeEl.textContent=time;results.classList.remove("show");running=true;roundToken++;
  msg.textContent="叩いて叩いて！";
  document.getElementById("start").disabled=true;
  // Independent appearance schedules: 1.0s / 0.8s / 0.6s.
@@ -123,11 +163,13 @@ function start(){
  });
  gameTimer=setInterval(()=>{
    time--;timeEl.textContent=time;
-   if(time<=0){stop();msg.textContent=`🎉 終了！ 最終スコア：${score}点`; }
+   if(time<=0){stop();showResults();msg.textContent=`🎉 終了！ 最終スコア：${score}点`; }
  },1000);
 }
 function reset(){
- stop();score=0;time=60;setScore(0);timeEl.textContent=time;msg.textContent="スタートを押してゲーム開始！";
+ stop();score=0;time=60;hitCounts={};setScore(0);timeEl.textContent=time;
+ results.classList.remove("show");resultList.innerHTML="";totalResult.textContent="0";
+ msg.textContent="スタートを押してゲーム開始！";
 }
 document.getElementById("start").addEventListener("click",start);
 document.getElementById("reset").addEventListener("click",reset);
